@@ -1,0 +1,1 @@
+SELECT * FROM systems WHERE hhm_config->'log_rotation' = $1; 
