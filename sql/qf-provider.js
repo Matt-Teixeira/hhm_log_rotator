@@ -10,7 +10,7 @@ const logQf = async (uuid, fn, qfArgs) => {
 };
 
 const getSystemConfig_v_1 = async (uuid, args) => {
-  await logQf(uuid, "getSystemIpAddress", "sme");
+  await logQf(uuid, "getSystemConfig_v_1", "sme");
   return db.any(system_config.system_config_v_1, args);
 };
 
