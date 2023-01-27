@@ -10,6 +10,7 @@ const resetRedisCachedValue = async (jobId, redisClient, sme, file) => {
 
     await redisClient.set(setKey, 0);
   } catch (error) {
+    redisClient
     await log("error", jobId, sme, "resetRedisCachedValue", "FN CALL");
   }
 };

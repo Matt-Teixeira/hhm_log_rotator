@@ -2,61 +2,29 @@
 require("dotenv").config();
 const crypto = require("crypto");
 const { log } = require("./logger");
-const {
-  initRedis,
-  cachedFileSize,
-  getCurrentFileSize,
-  resetRedisCachedValue,
-} = require("./redis");
-const { getSystemConfig_v_1 } = require("./sql/qf-provider");
-const execRotateFile = require("./read/exec-rotateFile");
+const { initRedis } = require("./redis");
+const { getSystemConfig } = require("./sql/qf-provider");
+const { reset_redis, rotate_logs_redis } = require("./jobs");
 
-const runJob = async (jobId, redisClient, systems) => {
+const runJob = async (jobId, redisClient, systems, refresh_version) => {
   try {
-    await log("info", jobId, "sme", "runJob", "FN CALL");
+    await log("info", jobId, refresh_version, "runJob", "FN CALL");
+    
+    switch (refresh_version) {
+      case "v_1":
+        // Rotates log on debian and set redis key value to "0"
+        await rotate_logs_redis(jobId, redisClient, systems);
+        break;
+      case "v_3":
+        // Set redis key value to "0" only
+        await reset_redis(jobId, redisClient, systems);
+        break;
 
-    const fileSizePath = "./read/sh/readFileSize.sh";
-    const rotateFilePath = "./read/sh/rotateLog.sh";
-    const s = process.env.SUDO;
-
-    for await (const system of systems) {
-      for await (const fileConfig of system.hhm_file_config) {
-        const key = `${system.id}.${fileConfig.file_name}`;
-        const cacheFileSize = await cachedFileSize(jobId, system.id, redisClient, key);
-
-        // Get Current File Size
-        const currentFileSize = await getCurrentFileSize(
-          system.id,
-          fileSizePath,
-          system.hhm_config.file_path,
-          fileConfig.file_name
-        );
-
-        // Compare file sizes. If no differance, set redis to 0 && rotate file in Debian;
-        if (currentFileSize - cacheFileSize === 0) {
-          // Reset redis cache
-          resetRedisCachedValue(
-            jobId,
-            redisClient,
-            system.id,
-            fileConfig.file_name
-          );
-
-          // Rotate File
-          const datetime_now = new Date().toISOString()
-          const complete_file_path = `${system.hhm_config.file_path}/${fileConfig.file_name}`;
-          const copy_file_path = `${system.hhm_config.file_path}/archive/${fileConfig.file_name}_${datetime_now}`;
-        
-          execRotateFile(jobId, rotateFilePath, complete_file_path, copy_file_path, s);
-          
-        }
-      }
+      default:
+        break;
     }
-
-    await redisClient.quit();
   } catch (error) {
     console.log(error);
-    // Close connection in event of error
     await redisClient.quit();
     await log("error", jobId, "sme", "runJob", "FN CATCH", {
       error: error,
@@ -66,19 +34,24 @@ const runJob = async (jobId, redisClient, systems) => {
 
 const onBoot = async () => {
   let jobId = crypto.randomUUID();
+  const redisClient = await initRedis();
   try {
-    await log("info", jobId, "sme", "onBoot", `FN CALL`);
+    const refresh_version = process.argv[2];
 
-    const redisClient = await initRedis();
+    await log("info", jobId, refresh_version, "onBoot", `FN CALL`);
 
-    const systems = await getSystemConfig_v_1(jobId, '"v_1"');
+    // get all systems who's log_rotation refresh_version === shell args (process.argv[2])
+    const systems = await getSystemConfig(jobId, `"${refresh_version}"`);
 
-    await runJob(jobId, redisClient, systems);
+    await runJob(jobId, redisClient, systems, refresh_version);
+
+    await redisClient.quit();
   } catch (error) {
     console.log(error);
     await log("error", jobId, "NA", "onBoot", "FN CATCH", {
       error: error,
     });
+    await redisClient.quit();
   }
 };
 

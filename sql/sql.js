@@ -8,6 +8,6 @@ const sql = (file) => {
 
 module.exports = {
   system_config: {
-    system_config_v_1: sql("queries/getSystemConfig_v_1.sql")
+    system_config: sql("queries/getSystemConfig_v_1.sql")
   }
 };
